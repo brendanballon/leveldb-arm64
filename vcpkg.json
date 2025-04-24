@@ -1,0 +1,10 @@
+{
+  "name": "leveldb-arm64",
+  "version": "0.1.0",
+  "dependencies": [
+    "crc32c",
+    "zlib",
+    "snappy"
+  ],
+  "supports": "arm64"
+}

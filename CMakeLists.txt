@@ -6,6 +6,43 @@ cmake_minimum_required(VERSION 3.9)
 # Keep the version below in sync with the one in db.h
 project(leveldb VERSION 1.23.0 LANGUAGES C CXX)
 
+# vcpkg and iOS toolchain integration
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake")
+  # Use the vcpkg submodule
+  if(DEFINED CMAKE_TOOLCHAIN_FILE)
+    # Store the user-provided toolchain (likely iOS toolchain)
+    set(USER_TOOLCHAIN_FILE "${CMAKE_TOOLCHAIN_FILE}")
+    # Use vcpkg toolchain but tell it about the iOS toolchain
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "" FORCE)
+    # Pass the iOS toolchain to vcpkg
+    set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${USER_TOOLCHAIN_FILE}"
+        CACHE STRING "")
+    message(STATUS "Using bundled vcpkg with chainloaded toolchain: ${USER_TOOLCHAIN_FILE}")
+  else()
+    # No user toolchain, just use vcpkg normally
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "")
+    message(STATUS "Using bundled vcpkg for dependencies")
+  endif()
+elseif(DEFINED ENV{VCPKG_ROOT})
+  # Fall back to system vcpkg if available
+  if(DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(USER_TOOLCHAIN_FILE "${CMAKE_TOOLCHAIN_FILE}")
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "" FORCE)
+    set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${USER_TOOLCHAIN_FILE}"
+        CACHE STRING "")
+    message(STATUS "Using system vcpkg with chainloaded toolchain: ${USER_TOOLCHAIN_FILE}")
+  else()
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "")
+    message(STATUS "Using system vcpkg for dependencies")
+  endif()
+else()
+  message(STATUS "vcpkg not found. Using system libraries.")
+endif()
+
 # C standard can be overridden when this is used as a sub-project.
 if(NOT CMAKE_C_STANDARD)
   # This project can use C11, but will gracefully decay down to C89.

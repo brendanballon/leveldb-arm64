@@ -1,8 +1,59 @@
-# Editors.
+# Editors and OS files
 *.sw*
 .vscode
 .DS_Store
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+.idea/
 
-# Build directory.
+# Build directories
 build/
 out/
+DerivedData/
+cmake-build-*/
+install/
+
+# iOS specific
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# vcpkg specific
+vcpkg_installed/
+
+# Generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Makefile
+*.cmake
+!ios.toolchain.cmake
+!vcpkg.cmake
+
+# Binary files
+*.a
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.lib
+*.framework
+
+# Dependency directories that should be ignored if not using submodules
+# Uncomment if not using submodules
+# third_party/ios-cmake/
+# third_party/vcpkg/
