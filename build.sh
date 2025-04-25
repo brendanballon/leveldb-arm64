@@ -1,4 +1,3 @@
-
 #!/bin/bash
 set -e
 
@@ -6,28 +5,34 @@ set -e
 # Where platform is one of: OS64, SIMULATOR64, MAC_ARM64, MAC_CATALYST_ARM64, etc.
 PLATFORM=${1:-MAC_ARM64}  # Default to macOS ARM64
 
-# Create build directory
-BUILD_DIR="build-${PLATFORM}"
-mkdir -p $BUILD_DIR
-cd $BUILD_DIR
+# Path to vcpkg in third_party folder
+PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+VCPKG_PATH="$PROJECT_DIR/third_party/vcpkg"
 
-# Map iOS toolchain platform to vcpkg triplet
-case $PLATFORM in
-  # iOS Device
-  OS|OS64|OS64COMBINED)
-    VCPKG_TRIPLET="arm64-ios"
-    ;;
-    
-  # iOS Simulator
-  SIMULATOR|SIMULATOR64|SIMULATORARM64|SIMULATOR64COMBINED)
-    if [[ $PLATFORM == *"ARM64"* ]]; then
-      VCPKG_TRIPLET="arm64-ios-simulator"
-    else
-      VCPKG_TRIPLET="x64-ios-simulator"
-    fi
-    ;;
-    
-  # macOS
+# Create build directory
+BUILD_DIR="build-$(echo ${PLATFORM} | tr '[:upper:]' '[:lower:]')"
+mkdir -p $BUILD_DIR
+IOS_TOOLCHAIN_PATH="$PROJECT_DIR/third_party/ios-cmake/ios.toolchain.cmake"
+
+# Verify the toolchain file exists
+if [ ! -f "$IOS_TOOLCHAIN_PATH" ]; then
+  echo "Error: iOS toolchain file not found at $IOS_TOOLCHAIN_PATH"
+  echo "Make sure you've initialized the submodule with: git submodule update --init --recursive"
+  exit 1
+fi
+
+echo "Using iOS toolchain at: $IOS_TOOLCHAIN_PATH"
+
+# Set deployment target based on platform
+DEPLOYMENT_TARGET="15.0"  # Default for macOS
+if [[ $PLATFORM == OS* || $PLATFORM == SIMULATOR* ]]; then
+  DEPLOYMENT_TARGET="18.4"  # For iOS/simulator
+fi
+
+# Map iOS toolchain platforms to vcpkg triplets
+# See third_party/ios-cmake/README.md for platform details
+case "$PLATFORM" in
+  # macOS platforms
   MAC)
     VCPKG_TRIPLET="x64-osx"
     ;;
@@ -35,52 +40,80 @@ case $PLATFORM in
     VCPKG_TRIPLET="arm64-osx"
     ;;
   MAC_UNIVERSAL)
-    VCPKG_TRIPLET="arm64-osx"  # Choose one for building dependencies
+    VCPKG_TRIPLET="x64-osx"  # Default to x64 for universal builds
     ;;
-    
-  # Mac Catalyst
+  
+  # iOS device platforms
+  OS)
+    VCPKG_TRIPLET="arm-ios"
+    ;;
+  OS64)
+    VCPKG_TRIPLET="arm64-ios"
+    ;;
+  
+  # iOS simulator platforms
+  SIMULATOR)
+    VCPKG_TRIPLET="x86-ios-simulator"
+    ;;
+  SIMULATOR64)
+    VCPKG_TRIPLET="x64-ios-simulator"
+    ;;
+  SIMULATOR_ARM64)
+    VCPKG_TRIPLET="arm64-ios-simulator"
+    ;;
+  
+  # Catalyst platforms
   MAC_CATALYST|MAC_CATALYST_ARM64|MAC_CATALYST_UNIVERSAL)
-    if [[ $PLATFORM == *"ARM64"* ]]; then
-      VCPKG_TRIPLET="arm64-osx"  # Use macOS triplet for Catalyst
-    else
-      VCPKG_TRIPLET="x64-osx"    # Use macOS triplet for Catalyst
-    fi
+    VCPKG_TRIPLET="x64-osx-catalyst"  # Default for Catalyst
     ;;
-    
-  # tvOS
-  TVOS|TVOSCOMBINED)
-    VCPKG_TRIPLET="arm64-ios"  # Use iOS triplet for tvOS
-    ;;
-    
-  # tvOS Simulator
-  SIMULATOR_TVOS|SIMULATORARM64_TVOS)
-    if [[ $PLATFORM == *"ARM64"* ]]; then
-      VCPKG_TRIPLET="arm64-ios-simulator"
-    else
-      VCPKG_TRIPLET="x64-ios-simulator"
-    fi
-    ;;
-    
-  # watchOS and visionOS - use iOS triplets as fallback
-  WATCHOS|WATCHOSCOMBINED|VISIONOS|VISIONOSCOMBINED)
-    VCPKG_TRIPLET="arm64-ios"  # Fallback to iOS triplet
-    ;;
-    
-  # Default fallback
+  
+  # Default case for unknown platforms
   *)
-    echo "Unknown platform: $PLATFORM, defaulting to arm64-osx"
-    VCPKG_TRIPLET="arm64-osx"
+    echo "Error: Unknown PLATFORM \"$PLATFORM\" for vcpkg triplet mapping"
+    echo "See third_party/ios-cmake/README.md for supported platforms"
+    exit 1
     ;;
 esac
+VCPKG_INSTALLED_DIR="$VCPKG_PATH/vcpkg_installed"
 
-echo "Building for platform: $PLATFORM using vcpkg triplet: $VCPKG_TRIPLET"
+# Run CMake with only the iOS toolchain
+# cd $BUILD_DIR
+# cmake .. \
+#   -DCMAKE_TOOLCHAIN_FILE="$IOS_TOOLCHAIN_PATH" \
+#   -DPLATFORM=$PLATFORM \
+#   -DENABLE_BITCODE=OFF \
+#   -DCMAKE_INSTALL_PREFIX=install \
+#   -DLEVELDB_BUILD_TESTS=OFF \
+#   -DLEVELDB_BUILD_BENCHMARKS=OFF \
+#   -DDEPLOYMENT_TARGET=$DEPLOYMENT_TARGET \
+#   -DVCPKG_BASE_PATH="$VCPKG_INSTALLED_DIR" \
+#   -DCMAKE_PREFIX_PATH="$VCPKG_INSTALLED_DIR"
 
-# Configure with iOS toolchain
-cmake .. \
-  -DCMAKE_TOOLCHAIN_FILE=../third_party/vcpkg/scripts/buildsystems/vcpkg.cmake \
-  -DVCPKG_TARGET_TRIPLET=$VCPKG_TRIPLET \
-  -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=../third_party/ios-cmake/ios.toolchain.cmake \
-  -DPLATFORM=$PLATFORM
+cd "$BUILD_DIR"
+
+# Paths
+VCPKG_ROOT="$PROJECT_DIR/third_party/vcpkg"
+VCPKG_TOOLCHAIN="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+IOS_TOOLCHAIN="$PROJECT_DIR/third_party/ios-cmake/ios.toolchain.cmake"
+
+# Set CMAKE_GENERATOR for both CMake and vcpkg
+CMAKE_GENERATOR="Ninja"
+
+# Run CMake with proper configuration
+cmake -G "$CMAKE_GENERATOR" .. \
+  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_TOOLCHAIN" \
+  -DVCPKG_MANIFEST_MODE=ON \
+  -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+  -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$IOS_TOOLCHAIN" \
+  -DPLATFORM="$PLATFORM" \
+  -DENABLE_BITCODE=OFF \
+  -DCMAKE_INSTALL_PREFIX=install \
+  -DLEVELDB_BUILD_TESTS=OFF \
+  -DLEVELDB_BUILD_BENCHMARKS=OFF \
+  -DDEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
 
 # Build
 cmake --build . -j$(sysctl -n hw.ncpu)
+
+# Install
+cmake --install .

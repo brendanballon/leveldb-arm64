@@ -3,45 +3,38 @@
 # found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 cmake_minimum_required(VERSION 3.9)
+
+# Check if we're using vcpkg toolchain
+if(DEFINED VCPKG_TARGET_TRIPLET)
+  message(STATUS "Using vcpkg toolchain: ${CMAKE_TOOLCHAIN_FILE}")
+  
+  # Enable manifest mode if vcpkg.json exists in the project root
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json")
+    set(VCPKG_MANIFEST_MODE ON)
+    message(STATUS "Enabling vcpkg manifest mode")
+  endif()
+  
+  # Set vcpkg installation directory for reference
+  if(DEFINED VCPKG_TARGET_TRIPLET)
+    message(STATUS "Using vcpkg triplet: ${VCPKG_TARGET_TRIPLET}")
+    set(VCPKG_INSTALLED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/vcpkg_installed/${VCPKG_TARGET_TRIPLET}")
+    
+    # Explicitly add vcpkg include directories to make headers visible
+    include_directories(BEFORE "${VCPKG_INSTALLED_DIR}/include")
+    link_directories("${VCPKG_INSTALLED_DIR}/lib")
+    
+    # Also set in CMAKE_PREFIX_PATH to help find_package find the right packages
+    list(APPEND CMAKE_PREFIX_PATH "${VCPKG_INSTALLED_DIR}")
+    
+    message(STATUS "Added vcpkg include path: ${VCPKG_INSTALLED_DIR}/include")
+  endif()
+endif()
+
+# Disable tcmalloc for iOS
+set(HAVE_TCMALLOC OFF)
+
 # Keep the version below in sync with the one in db.h
 project(leveldb VERSION 1.23.0 LANGUAGES C CXX)
-
-# vcpkg and iOS toolchain integration
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake")
-  # Use the vcpkg submodule
-  if(DEFINED CMAKE_TOOLCHAIN_FILE)
-    # Store the user-provided toolchain (likely iOS toolchain)
-    set(USER_TOOLCHAIN_FILE "${CMAKE_TOOLCHAIN_FILE}")
-    # Use vcpkg toolchain but tell it about the iOS toolchain
-    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "" FORCE)
-    # Pass the iOS toolchain to vcpkg
-    set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${USER_TOOLCHAIN_FILE}"
-        CACHE STRING "")
-    message(STATUS "Using bundled vcpkg with chainloaded toolchain: ${USER_TOOLCHAIN_FILE}")
-  else()
-    # No user toolchain, just use vcpkg normally
-    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "")
-    message(STATUS "Using bundled vcpkg for dependencies")
-  endif()
-elseif(DEFINED ENV{VCPKG_ROOT})
-  # Fall back to system vcpkg if available
-  if(DEFINED CMAKE_TOOLCHAIN_FILE)
-    set(USER_TOOLCHAIN_FILE "${CMAKE_TOOLCHAIN_FILE}")
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "" FORCE)
-    set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${USER_TOOLCHAIN_FILE}"
-        CACHE STRING "")
-    message(STATUS "Using system vcpkg with chainloaded toolchain: ${USER_TOOLCHAIN_FILE}")
-  else()
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "")
-    message(STATUS "Using system vcpkg for dependencies")
-  endif()
-else()
-  message(STATUS "vcpkg not found. Using system libraries.")
-endif()
 
 # C standard can be overridden when this is used as a sub-project.
 if(NOT CMAKE_C_STANDARD)
@@ -77,7 +70,6 @@ check_include_file("unistd.h" HAVE_UNISTD_H)
 include(CheckLibraryExists)
 check_library_exists(crc32c crc32c_value "" HAVE_CRC32C)
 check_library_exists(snappy snappy_compress "" HAVE_SNAPPY)
-check_library_exists(zstd zstd_compress "" HAVE_ZSTD)
 check_library_exists(tcmalloc malloc "" HAVE_TCMALLOC)
 
 include(CheckCXXSymbolExists)
@@ -113,6 +105,8 @@ else(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   string(REGEX REPLACE "-frtti" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
 endif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+
+
 
 # Test whether -Wthread-safety is available. See
 # https://clang.llvm.org/docs/ThreadSafetyAnalysis.html
@@ -270,6 +264,7 @@ target_sources(leveldb
 
 target_include_directories(leveldb
   PUBLIC
+    $<BUILD_INTERFACE:${VCPKG_INSTALLED_DIR}/include>
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
@@ -326,6 +321,24 @@ add_executable(leveldbutil
   "db/leveldbutil.cc"
 )
 target_link_libraries(leveldbutil leveldb)
+
+add_executable(mcpe_test
+  "${PROJECT_SOURCE_DIR}/db/mcpe_test.cc"
+)
+target_link_libraries(mcpe_test leveldb)
+
+# Find Zstd library
+find_library(ZSTD_LIBRARY zstd)
+if(ZSTD_LIBRARY)
+  message(STATUS "Found Zstd library: ${ZSTD_LIBRARY}")
+  # Define the macro globally so all targets can see it
+  add_definitions(-DLEVELDB_HAS_ZSTD_COMPRESSION)
+  
+  # Make sure mcpe_test links against zstd
+  target_link_libraries(mcpe_test ${ZSTD_LIBRARY})
+else()
+  message(STATUS "Zstd library not found, will use Snappy fallback")
+endif()
 
 if(LEVELDB_BUILD_TESTS)
   enable_testing()

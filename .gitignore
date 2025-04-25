@@ -17,7 +17,7 @@ xcuserdata/
 .idea/
 
 # Build directories
-build/
+build-*/
 out/
 DerivedData/
 cmake-build-*/

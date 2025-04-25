@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "dependencies": [
     "crc32c",
-    "zlib",
+    "zstd",
     "snappy"
   ],
   "supports": "arm64"
